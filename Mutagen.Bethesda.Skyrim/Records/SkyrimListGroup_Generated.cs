@@ -1337,6 +1337,17 @@ namespace Mutagen.Bethesda.Skyrim
 }
 
 #region Modules
+#region Mutagen
+namespace Mutagen.Bethesda.Skyrim
+{
+    internal partial class SkyrimListGroup_Registration : Mutagen.Bethesda.Plugins.Records.Loqui.IGroupRegistration
+    {
+        /// <summary>The group's triggering record type.</summary>
+        public RecordType RecordType => TriggeringRecordType;
+    }
+}
+#endregion
+
 #region Binary Translation
 namespace Mutagen.Bethesda.Skyrim
 {

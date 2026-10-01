@@ -1,6 +1,8 @@
 using Noggog;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using DynamicData;
 using Loqui;
 using Mutagen.Bethesda.Plugins.Analysis;
@@ -58,7 +60,12 @@ namespace Mutagen.Bethesda.Plugins.Records
             Warmup.Init();
             bool createActivator = true;
             var type = typeof(TMod);
-            if (type.Name.EndsWith("DisposableGetter"))
+            var hasStaticFactory = GameRegistrations.TryGetModFactory(type, out var factory);
+            if (hasStaticFactory)
+            {
+                createActivator = type != factory.DisposableGetterType;
+            }
+            else if (type.Name.EndsWith("DisposableGetter"))
             {
                 var className = type.Name.TrimStringFromEnd("DisposableGetter") + "Getter";
                 type = Type.GetType($"{type.Namespace}.{className}, {type.Namespace}");
@@ -96,14 +103,25 @@ namespace Mutagen.Bethesda.Plugins.Records
             }
             else
             {
-                if (!LoquiRegistration.TryGetRegister(type, out var regis))
+                ILoquiRegistration regis;
+                if (hasStaticFactory)
                 {
-                    throw new ArgumentException();
+                    regis = factory;
+                }
+                else
+                {
+                    if (!LoquiRegistration.TryGetRegister(type, out var registration))
+                    {
+                        throw new ArgumentException();
+                    }
+                    regis = registration;
                 }
 
                 if (createActivator)
                 {
-                    Activator = ModFactoryReflection.GetActivator<TMod>(regis);
+                    Activator = hasStaticFactory
+                        ? (modKey, release, version, ranges) => (TMod)factory.Create(modKey, release, version, ranges)
+                        : ModFactoryReflection.GetActivator<TMod>(regis);
                 }
                 else
                 {
@@ -114,7 +132,9 @@ namespace Mutagen.Bethesda.Plugins.Records
                 }
                 if (typeof(TMod).InheritsFrom(typeof(IMod)))
                 {
-                    Importer = ModFactoryReflection.GetImporter<TMod>(regis);
+                    Importer = hasStaticFactory
+                        ? (path, release, param) => (TMod)factory.ImportSetter(path, release, param)
+                        : ModFactoryReflection.GetImporter<TMod>(regis);
                     ImportMultiFileGetter = (targetModKey, splitFiles, loadOrder, release, param) =>
                         throw new InvalidOperationException("ImportMultiFileGetter is only supported for getter/overlay types, not mutable mod types");
                     ImportGetterWithMultiFileDetection = (modPath, loadOrder, release, param) =>
@@ -124,7 +144,9 @@ namespace Mutagen.Bethesda.Plugins.Records
                 }
                 else
                 {
-                    Importer = ModFactoryReflection.GetOverlay<TMod>(regis);
+                    Importer = hasStaticFactory
+                        ? (path, release, param) => (TMod)factory.ImportGetter(path, release, param)
+                        : ModFactoryReflection.GetOverlay<TMod>(regis);
                     ImportMultiFileGetter = (targetModKey, splitFiles, loadOrder, release, param) =>
                         (TMod)ModFactory.ImportMultiFileGetter(targetModKey, splitFiles, loadOrder, release, param);
                     ImportGetterWithMultiFileDetection = (modPath, loadOrder, release, param) =>
@@ -146,39 +168,58 @@ namespace Mutagen.Bethesda.Plugins.Records
             ModFactory<IMod>.ImporterDelegate ImportSetter,
             ModFactory<IMod>.ActivatorDelegate Activator);
 
-        private static Dictionary<GameCategory, Delegates> _dict = new();
+        private static readonly ConcurrentDictionary<GameCategory, Delegates> Factories = new();
 
-        static ModFactory()
+        /// <summary>Resolves only the requested game's static factory or compatibility fallback.</summary>
+        private static Delegates GetDelegates(GameCategory category)
         {
-            foreach (var category in Enums<GameCategory>.Values)
+            return Factories.GetOrAdd(category, static category =>
             {
-                var t = Type.GetType(
-                    $"Mutagen.Bethesda.{category}.{category}Mod_Registration, Mutagen.Bethesda.{category}");
-                if (t == null) continue;
-                var obj = System.Activator.CreateInstance(t);
-                var modRegistration = obj as IModRegistration;
-                if (modRegistration == null) continue;
-                _dict[modRegistration.GameCategory] = new Delegates(
-                    ModFactoryReflection.GetOverlay<IModDisposeGetter>(modRegistration),
-                    ModFactoryReflection.GetImporter<IMod>(modRegistration),
-                    ModFactoryReflection.GetActivator<IMod>(modRegistration));
+                if (GameRegistrations.TryGet(category, out var definition)
+                    && definition.Mod is IModFactory factory)
+                {
+                    Warmup.Init();
+                    return new Delegates(factory.ImportGetter, factory.ImportSetter, factory.Create);
+                }
 
-            }
+                return GetReflectionDelegates(category);
+            });
         }
 
+        /// <summary>Builds legacy delegates for a game without a registered static factory.</summary>
+        [RequiresUnreferencedCode("Unregistered games discover mod types and members by reflection. Register the game's static factory before using ModFactory.")]
+        [RequiresDynamicCode("Unregistered games build delegates using runtime-selected types. Register the game's static factory before using ModFactory.")]
+        private static Delegates GetReflectionDelegates(GameCategory category)
+        {
+            var type = Type.GetType(
+                $"Mutagen.Bethesda.{category}.{category}Mod_Registration, Mutagen.Bethesda.{category}");
+            if (type == null || System.Activator.CreateInstance(type) is not IModRegistration registration)
+            {
+                throw new KeyNotFoundException($"No mod factory is available for {category}.");
+            }
+
+            return new Delegates(
+                ModFactoryReflection.GetOverlay<IModDisposeGetter>(registration),
+                ModFactoryReflection.GetImporter<IMod>(registration),
+                ModFactoryReflection.GetActivator<IMod>(registration));
+        }
+
+        /// <summary>Imports a single-file overlay whose resources are owned by the returned getter.</summary>
         public static IModDisposeGetter ImportGetter(ModPath path, GameRelease release, BinaryReadParameters? param = null)
         {
-            return _dict[release.ToCategory()].ImportGetter(path, release, param);
+            return GetDelegates(release.ToCategory()).ImportGetter(path, release, param);
         }
 
+        /// <summary>Imports a single-file mutable mod, closing its input before returning.</summary>
         public static IMod ImportSetter(ModPath path, GameRelease release, BinaryReadParameters? param = null)
         {
-            return _dict[release.ToCategory()].ImportSetter(path, release, param);
+            return GetDelegates(release.ToCategory()).ImportSetter(path, release, param);
         }
 
+        /// <summary>Creates a mod for the requested game with the existing header and FormID defaults.</summary>
         public static IMod Activator(ModKey modKey, GameRelease release, float? headerVersion = null, bool? forceUseLowerFormIDRanges = false)
         {
-            return _dict[release.ToCategory()].Activator(modKey, release, headerVersion: headerVersion, forceUseLowerFormIDRanges: forceUseLowerFormIDRanges);
+            return GetDelegates(release.ToCategory()).Activator(modKey, release, headerVersion: headerVersion, forceUseLowerFormIDRanges: forceUseLowerFormIDRanges);
         }
 
         /// <summary>
@@ -453,6 +494,9 @@ namespace Mutagen.Bethesda.Plugins.Records
 
     internal static class ModFactoryReflection
     {
+        /// <summary>Builds a constructor delegate for the legacy dynamic game path.</summary>
+        [RequiresUnreferencedCode("Mod constructors are discovered by reflection. Use a registered static mod factory instead.")]
+        [RequiresDynamicCode("Mod constructor delegates use runtime-selected types. Use a registered static mod factory instead.")]
         internal static ModFactory<TMod>.ActivatorDelegate GetActivator<TMod>(ILoquiRegistration regis)
             where TMod : IModGetter
         {
@@ -488,6 +532,9 @@ namespace Mutagen.Bethesda.Plugins.Records
             }
         }
 
+        /// <summary>Builds a mutable import delegate for the legacy dynamic game path.</summary>
+        [RequiresUnreferencedCode("Mod import methods are discovered by reflection. Use a registered static mod factory instead.")]
+        [RequiresDynamicCode("Mod import delegates use runtime-selected types. Use a registered static mod factory instead.")]
         public static ModFactory<TMod>.ImporterDelegate GetImporter<TMod>(ILoquiRegistration regis)
             where TMod : IModGetter
         {
@@ -524,6 +571,9 @@ namespace Mutagen.Bethesda.Plugins.Records
             };
         }
 
+        /// <summary>Builds an overlay import delegate for the legacy dynamic game path.</summary>
+        [RequiresUnreferencedCode("Mod overlay methods are discovered by reflection. Use a registered static mod factory instead.")]
+        [RequiresDynamicCode("Mod overlay delegates use runtime-selected types. Use a registered static mod factory instead.")]
         public static ModFactory<TMod>.ImporterDelegate GetOverlay<TMod>(ILoquiRegistration regis)
             where TMod : IModGetter
         {

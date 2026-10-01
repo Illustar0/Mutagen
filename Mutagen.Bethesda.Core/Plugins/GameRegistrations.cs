@@ -1,6 +1,7 @@
 using Loqui;
 using Mutagen.Bethesda.Plugins.Cache.Internals;
 using Mutagen.Bethesda.Plugins.Records.Mapping;
+using Mutagen.Bethesda.Plugins.Records.Loqui;
 
 namespace Mutagen.Bethesda.Plugins;
 
@@ -57,6 +58,45 @@ internal static class GameRegistrations
             }
 
             Registrations.Add(category, definition);
+        }
+    }
+
+    /// <summary>Finds a top-level record trigger supplied by a registered mod factory.</summary>
+    public static bool TryGetGroupRecordType(Type type, out RecordType recordType)
+    {
+        lock (SyncRoot)
+        {
+            _frozen = true;
+            foreach (var definition in Registrations.Values)
+            {
+                if (definition.Mod is IModFactory factory && factory.TryGetGroupRecordType(type, out recordType))
+                {
+                    return true;
+                }
+            }
+
+            recordType = default;
+            return false;
+        }
+    }
+
+    /// <summary>Finds a static factory for a registered mod class or interface.</summary>
+    public static bool TryGetModFactory(Type type, out IModFactory factory)
+    {
+        lock (SyncRoot)
+        {
+            _frozen = true;
+            foreach (var definition in Registrations.Values)
+            {
+                if (definition.Mod is not IModFactory candidate) continue;
+                if (type != candidate.ClassType && type != candidate.SetterType
+                    && type != candidate.GetterType && type != candidate.DisposableGetterType) continue;
+                factory = candidate;
+                return true;
+            }
+
+            factory = null!;
+            return false;
         }
     }
 

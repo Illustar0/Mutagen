@@ -275,6 +275,30 @@ public class TriggeringRecordModule : GenerationModule
         }
     }
 
+    /// <summary>Emits the group trigger contract required by mod construction under Native AOT.</summary>
+    public override async Task GenerateInVoid(ObjectGeneration obj, StructuredStringBuilder sb)
+    {
+        await base.GenerateInVoid(obj, sb);
+        if (obj.GetObjectType() != ObjectType.Group) return;
+        var triggers = (await obj.GetObjectData().GenerationTypes).SelectMany(pair => pair.Key).Distinct().ToArray();
+        if (triggers.Length != 1) return;
+
+        using (sb.Namespace(obj.ProtoGen.DefaultNamespace, fileScoped: false))
+        {
+            using (var registration = sb.Class($"{obj.Name}_Registration"))
+            {
+                registration.AccessModifier = AccessModifier.Internal;
+                registration.Partial = true;
+                registration.Interfaces.Add("Mutagen.Bethesda.Plugins.Records.Loqui.IGroupRegistration");
+            }
+            using (sb.CurlyBrace())
+            {
+                sb.AppendLine("/// <summary>The group's triggering record type.</summary>");
+                sb.AppendLine($"public RecordType RecordType => {Plugins.Internals.Constants.TriggeringRecordTypeMember};");
+            }
+        }
+    }
+
     public override async Task GenerateInRegistration(ObjectGeneration obj, StructuredStringBuilder sb)
     {
         HashSet<RecordType> trigRecordTypes = new HashSet<RecordType>();

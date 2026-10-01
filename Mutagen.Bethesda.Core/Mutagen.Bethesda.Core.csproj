@@ -585,6 +585,7 @@
         <Compile Include="Plugins\Utility\ModCompaction.cs" />
         <Compile Include="Plugins\Utility\MutagenStrongInjectModule.cs" />
         <Compile Include="Plugins\GameRegistrations.cs" />
+        <Compile Include="Plugins\Records\Loqui\IGroupRegistration.cs" />
         <Compile Include="Plugins\Warmup.cs">
             <CodeLanguage>cs</CodeLanguage>
             <DefaultPackFolder>content</DefaultPackFolder>

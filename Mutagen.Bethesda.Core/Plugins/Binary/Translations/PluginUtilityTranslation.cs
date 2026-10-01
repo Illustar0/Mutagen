@@ -500,7 +500,18 @@ internal static class PluginUtilityTranslation
 
     internal static RecordType GetRecordType<T>()
     {
-        return (RecordType)LoquiRegistration.GetRegister(typeof(T))!.GetType()
+        if (GameRegistrations.TryGetGroupRecordType(typeof(T), out var recordType))
+        {
+            return recordType;
+        }
+
+        var registration = LoquiRegistration.GetRegister(typeof(T));
+        if (registration is Mutagen.Bethesda.Plugins.Records.Loqui.IGroupRegistration group)
+        {
+            return group.RecordType;
+        }
+
+        return (RecordType)registration!.GetType()
             .GetField(Constants.TriggeringRecordTypeMember)!.GetValue(null)!;
     }
 

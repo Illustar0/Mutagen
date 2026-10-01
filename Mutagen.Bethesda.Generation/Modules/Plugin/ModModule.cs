@@ -1,5 +1,6 @@
 using Loqui;
 using Loqui.Generation;
+using Mutagen.Bethesda.Generation.Fields;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Binary.Streams;
 using Mutagen.Bethesda.Plugins.Binary.Translations;
@@ -353,14 +354,81 @@ public class ModModule : GenerationModule
             {
                 c.AccessModifier = AccessModifier.Internal;
                 c.Partial = true;
-                c.Interfaces.Add(nameof(IModRegistration));
+                c.Interfaces.Add(nameof(IModFactory));
             }
 
             using (sb.CurlyBrace())
             {
                 sb.AppendLine($"public {nameof(GameCategory)} GameCategory => {nameof(GameCategory)}.{obj.GetObjectData().GameCategory};");
+                GenerateModFactory(obj, sb);
             }
             sb.AppendLine();
+        }
+    }
+
+    /// <summary>Emits direct mod construction and single-file import calls for static registration.</summary>
+    private static void GenerateModFactory(ObjectGeneration obj, StructuredStringBuilder sb)
+    {
+        var releaseArgument = obj.GetObjectData().GameReleaseOptions == null
+            ? string.Empty
+            : $", release.To{ReleaseEnumName(obj)}()";
+        sb.AppendLine();
+        sb.AppendLine("/// <summary>The disposable mod getter interface.</summary>");
+        sb.AppendLine($"public Type DisposableGetterType => typeof(I{obj.Name}DisposableGetter);");
+        GenerateGroupRecordTypes(obj, sb);
+        sb.AppendLine();
+        sb.AppendLine("/// <summary>Creates a mutable mod with the requested defaults.</summary>");
+        GenerateModFactoryMethod(sb,
+            $"public {nameof(IMod)} Create(ModKey modKey, GameRelease release, float? headerVersion, bool? forceUseLowerFormIDRanges)",
+            $"new {obj.Name}(modKey{releaseArgument}, headerVersion, forceUseLowerFormIDRanges)");
+        sb.AppendLine();
+        sb.AppendLine("/// <summary>Imports a mutable mod from one file.</summary>");
+        GenerateModFactoryMethod(sb,
+            $"public {nameof(IMod)} ImportSetter(ModPath path, GameRelease release, BinaryReadParameters? param)",
+            $"{obj.Name}.CreateFromBinary(path{releaseArgument}, param: param)");
+        sb.AppendLine();
+        sb.AppendLine("/// <summary>Imports an overlay that owns its input stream.</summary>");
+        GenerateModFactoryMethod(sb,
+            $"public {nameof(IModDisposeGetter)} ImportGetter(ModPath path, GameRelease release, BinaryReadParameters? param)",
+            $"{obj.Name}.CreateFromBinaryOverlay(path{releaseArgument}, param: param)");
+    }
+
+    /// <summary>Emits only the record triggers needed by the mod's top-level group constructors.</summary>
+    private static void GenerateGroupRecordTypes(ObjectGeneration obj, StructuredStringBuilder sb)
+    {
+        sb.AppendLine();
+        sb.AppendLine("private static readonly Dictionary<Type, RecordType> GroupRecordTypes = new()");
+        using (sb.CurlyBrace(appendSemiColon: true))
+        {
+            foreach (var field in obj.IterateFields().OfType<GroupType>())
+            {
+                if (!field.TryGetSpecificationAsObject("T", out var record))
+                    throw new InvalidOperationException($"Group {field.Name} has no record type specification.");
+                sb.AppendLine($"[typeof({record.Name})] = {record.RecordTypeHeaderName(record.GetRecordType())},");
+            }
+        }
+        sb.AppendLine();
+        sb.AppendLine("/// <summary>Finds the trigger needed to initialize a top-level group.</summary>");
+        sb.AppendLine("public bool TryGetGroupRecordType(Type type, out RecordType recordType)");
+        sb.AppendLine("    => GroupRecordTypes.TryGetValue(type, out recordType);");
+    }
+
+    /// <summary>Preserves the public factories' historical invocation exception wrapper.</summary>
+    private static void GenerateModFactoryMethod(StructuredStringBuilder sb, string declaration, string invocation)
+    {
+        sb.AppendLine(declaration);
+        using (sb.CurlyBrace())
+        {
+            sb.AppendLine("try");
+            using (sb.CurlyBrace())
+            {
+                sb.AppendLine($"return {invocation};");
+            }
+            sb.AppendLine("catch (Exception ex)");
+            using (sb.CurlyBrace())
+            {
+                sb.AppendLine("throw new System.Reflection.TargetInvocationException(ex);");
+            }
         }
     }
 

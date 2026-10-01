@@ -19917,9 +19917,172 @@ namespace Mutagen.Bethesda.Skyrim
 }
 namespace Mutagen.Bethesda.Skyrim
 {
-    internal partial class SkyrimMod_Registration : IModRegistration
+    internal partial class SkyrimMod_Registration : IModFactory
     {
         public GameCategory GameCategory => GameCategory.Skyrim;
+
+        /// <summary>The disposable mod getter interface.</summary>
+        public Type DisposableGetterType => typeof(ISkyrimModDisposableGetter);
+
+        private static readonly Dictionary<Type, RecordType> GroupRecordTypes = new()
+        {
+            [typeof(GameSetting)] = RecordTypes.GMST,
+            [typeof(Keyword)] = RecordTypes.KYWD,
+            [typeof(LocationReferenceType)] = RecordTypes.LCRT,
+            [typeof(ActionRecord)] = RecordTypes.AACT,
+            [typeof(TextureSet)] = RecordTypes.TXST,
+            [typeof(Global)] = RecordTypes.GLOB,
+            [typeof(Class)] = RecordTypes.CLAS,
+            [typeof(Faction)] = RecordTypes.FACT,
+            [typeof(HeadPart)] = RecordTypes.HDPT,
+            [typeof(Hair)] = RecordTypes.HAIR,
+            [typeof(Eyes)] = RecordTypes.EYES,
+            [typeof(Race)] = RecordTypes.RACE,
+            [typeof(SoundMarker)] = RecordTypes.SOUN,
+            [typeof(AcousticSpace)] = RecordTypes.ASPC,
+            [typeof(MagicEffect)] = RecordTypes.MGEF,
+            [typeof(LandscapeTexture)] = RecordTypes.LTEX,
+            [typeof(ObjectEffect)] = RecordTypes.ENCH,
+            [typeof(Spell)] = RecordTypes.SPEL,
+            [typeof(Scroll)] = RecordTypes.SCRL,
+            [typeof(Activator)] = RecordTypes.ACTI,
+            [typeof(TalkingActivator)] = RecordTypes.TACT,
+            [typeof(Armor)] = RecordTypes.ARMO,
+            [typeof(Book)] = RecordTypes.BOOK,
+            [typeof(Container)] = RecordTypes.CONT,
+            [typeof(Door)] = RecordTypes.DOOR,
+            [typeof(Ingredient)] = RecordTypes.INGR,
+            [typeof(Light)] = RecordTypes.LIGH,
+            [typeof(MiscItem)] = RecordTypes.MISC,
+            [typeof(AlchemicalApparatus)] = RecordTypes.APPA,
+            [typeof(Static)] = RecordTypes.STAT,
+            [typeof(MoveableStatic)] = RecordTypes.MSTT,
+            [typeof(Grass)] = RecordTypes.GRAS,
+            [typeof(Tree)] = RecordTypes.TREE,
+            [typeof(Flora)] = RecordTypes.FLOR,
+            [typeof(Furniture)] = RecordTypes.FURN,
+            [typeof(Weapon)] = RecordTypes.WEAP,
+            [typeof(Ammunition)] = RecordTypes.AMMO,
+            [typeof(Npc)] = RecordTypes.NPC_,
+            [typeof(LeveledNpc)] = RecordTypes.LVLN,
+            [typeof(Key)] = RecordTypes.KEYM,
+            [typeof(Ingestible)] = RecordTypes.ALCH,
+            [typeof(IdleMarker)] = RecordTypes.IDLM,
+            [typeof(ConstructibleObject)] = RecordTypes.COBJ,
+            [typeof(Projectile)] = RecordTypes.PROJ,
+            [typeof(Hazard)] = RecordTypes.HAZD,
+            [typeof(SoulGem)] = RecordTypes.SLGM,
+            [typeof(LeveledItem)] = RecordTypes.LVLI,
+            [typeof(Weather)] = RecordTypes.WTHR,
+            [typeof(Climate)] = RecordTypes.CLMT,
+            [typeof(ShaderParticleGeometry)] = RecordTypes.SPGD,
+            [typeof(VisualEffect)] = RecordTypes.RFCT,
+            [typeof(Region)] = RecordTypes.REGN,
+            [typeof(NavigationMeshInfoMap)] = RecordTypes.NAVI,
+            [typeof(Worldspace)] = RecordTypes.WRLD,
+            [typeof(DialogTopic)] = RecordTypes.DIAL,
+            [typeof(Quest)] = RecordTypes.QUST,
+            [typeof(IdleAnimation)] = RecordTypes.IDLE,
+            [typeof(Package)] = RecordTypes.PACK,
+            [typeof(CombatStyle)] = RecordTypes.CSTY,
+            [typeof(LoadScreen)] = RecordTypes.LSCR,
+            [typeof(LeveledSpell)] = RecordTypes.LVSP,
+            [typeof(AnimatedObject)] = RecordTypes.ANIO,
+            [typeof(Water)] = RecordTypes.WATR,
+            [typeof(EffectShader)] = RecordTypes.EFSH,
+            [typeof(Explosion)] = RecordTypes.EXPL,
+            [typeof(Debris)] = RecordTypes.DEBR,
+            [typeof(ImageSpace)] = RecordTypes.IMGS,
+            [typeof(ImageSpaceAdapter)] = RecordTypes.IMAD,
+            [typeof(FormList)] = RecordTypes.FLST,
+            [typeof(Perk)] = RecordTypes.PERK,
+            [typeof(BodyPartData)] = RecordTypes.BPTD,
+            [typeof(AddonNode)] = RecordTypes.ADDN,
+            [typeof(ActorValueInformation)] = RecordTypes.AVIF,
+            [typeof(CameraShot)] = RecordTypes.CAMS,
+            [typeof(CameraPath)] = RecordTypes.CPTH,
+            [typeof(VoiceType)] = RecordTypes.VTYP,
+            [typeof(MaterialType)] = RecordTypes.MATT,
+            [typeof(Impact)] = RecordTypes.IPCT,
+            [typeof(ImpactDataSet)] = RecordTypes.IPDS,
+            [typeof(ArmorAddon)] = RecordTypes.ARMA,
+            [typeof(EncounterZone)] = RecordTypes.ECZN,
+            [typeof(Location)] = RecordTypes.LCTN,
+            [typeof(Message)] = RecordTypes.MESG,
+            [typeof(DefaultObjectManager)] = RecordTypes.DOBJ,
+            [typeof(LightingTemplate)] = RecordTypes.LGTM,
+            [typeof(MusicType)] = RecordTypes.MUSC,
+            [typeof(Footstep)] = RecordTypes.FSTP,
+            [typeof(FootstepSet)] = RecordTypes.FSTS,
+            [typeof(StoryManagerBranchNode)] = RecordTypes.SMBN,
+            [typeof(StoryManagerQuestNode)] = RecordTypes.SMQN,
+            [typeof(StoryManagerEventNode)] = RecordTypes.SMEN,
+            [typeof(DialogBranch)] = RecordTypes.DLBR,
+            [typeof(MusicTrack)] = RecordTypes.MUST,
+            [typeof(DialogView)] = RecordTypes.DLVW,
+            [typeof(WordOfPower)] = RecordTypes.WOOP,
+            [typeof(Shout)] = RecordTypes.SHOU,
+            [typeof(EquipType)] = RecordTypes.EQUP,
+            [typeof(Relationship)] = RecordTypes.RELA,
+            [typeof(Scene)] = RecordTypes.SCEN,
+            [typeof(AssociationType)] = RecordTypes.ASTP,
+            [typeof(Outfit)] = RecordTypes.OTFT,
+            [typeof(ArtObject)] = RecordTypes.ARTO,
+            [typeof(MaterialObject)] = RecordTypes.MATO,
+            [typeof(MovementType)] = RecordTypes.MOVT,
+            [typeof(SoundDescriptor)] = RecordTypes.SNDR,
+            [typeof(DualCastData)] = RecordTypes.DUAL,
+            [typeof(SoundCategory)] = RecordTypes.SNCT,
+            [typeof(SoundOutputModel)] = RecordTypes.SOPM,
+            [typeof(CollisionLayer)] = RecordTypes.COLL,
+            [typeof(ColorRecord)] = RecordTypes.CLFM,
+            [typeof(ReverbParameters)] = RecordTypes.REVB,
+            [typeof(VolumetricLighting)] = RecordTypes.VOLI,
+            [typeof(LensFlare)] = RecordTypes.LENS,
+        };
+
+        /// <summary>Finds the trigger needed to initialize a top-level group.</summary>
+        public bool TryGetGroupRecordType(Type type, out RecordType recordType)
+            => GroupRecordTypes.TryGetValue(type, out recordType);
+
+        /// <summary>Creates a mutable mod with the requested defaults.</summary>
+        public IMod Create(ModKey modKey, GameRelease release, float? headerVersion, bool? forceUseLowerFormIDRanges)
+        {
+            try
+            {
+                return new SkyrimMod(modKey, release.ToSkyrimRelease(), headerVersion, forceUseLowerFormIDRanges);
+            }
+            catch (Exception ex)
+            {
+                throw new System.Reflection.TargetInvocationException(ex);
+            }
+        }
+
+        /// <summary>Imports a mutable mod from one file.</summary>
+        public IMod ImportSetter(ModPath path, GameRelease release, BinaryReadParameters? param)
+        {
+            try
+            {
+                return SkyrimMod.CreateFromBinary(path, release.ToSkyrimRelease(), param: param);
+            }
+            catch (Exception ex)
+            {
+                throw new System.Reflection.TargetInvocationException(ex);
+            }
+        }
+
+        /// <summary>Imports an overlay that owns its input stream.</summary>
+        public IModDisposeGetter ImportGetter(ModPath path, GameRelease release, BinaryReadParameters? param)
+        {
+            try
+            {
+                return SkyrimMod.CreateFromBinaryOverlay(path, release.ToSkyrimRelease(), param: param);
+            }
+            catch (Exception ex)
+            {
+                throw new System.Reflection.TargetInvocationException(ex);
+            }
+        }
     }
 
 }
